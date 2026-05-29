@@ -61,7 +61,7 @@ html,html,body{margin:0;padding:0;height:100%;height:-webkit-fill-available;}bod
 .today-card-optional .today-eyebrow::after{content:" · optional";font-style:italic;opacity:0.6;font-size:9px;}
 .today-rest .today-eyebrow{color:var(--muted);}
 .today-rest .today-name{font-size:18px;color:var(--muted);}
-.week-strip{display:grid;grid-template-columns:repeat(7,1fr);gap:0;padding:8px 6px 10px;min-height:78px;}
+#week-strip{display:flex;flex-direction:row;gap:4px;min-width:max-content;}
 .wday{text-align:center;padding:4px 0;}
 .wday-name{font-size:10px;color:var(--muted);margin-bottom:5px;font-weight:600;letter-spacing:0.03em;}
 .wday-dot{width:32px;height:32px;border-radius:50%;margin:0 auto;display:flex;align-items:center;justify-content:center;font-size:11px;border:1px solid transparent;}
@@ -633,7 +633,7 @@ input[type=number]{-moz-appearance:textfield;}
       <div style="padding:0 18px 6px;text-align:center;">
         <span id="strip-month-label" style="font-size:11px;font-weight:500;color:var(--muted);letter-spacing:0.04em;font-family:var(--mono);"></span>
       </div>
-      <div id="strip-container" style="overflow:hidden;position:relative;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin:0 18px;">
+      <div id="strip-container" style="overflow-x:auto;overflow-y:hidden;position:relative;-webkit-overflow-scrolling:touch;scrollbar-width:none;min-height:86px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin:0 18px;">
         <div class="week-strip" id="week-strip" style="width:100%;"></div>
       </div>
       <div class="section-head" style="display:flex;align-items:center;justify-content:space-between;padding-right:18px;">
@@ -1377,7 +1377,7 @@ function getRunType(type) { return RUN_TYPES[type] || RUN_TYPES.easy; }
 /* ── TODAY PAGE: PHASE PILLS + SNAP SLIDER ── */
 let currentPhaseView = 1;
 let currentWeekSlide = 0;
-let stripWeekOffset = 0;
+let stripDayOffset = 0;
 
 function renderPhasePills() {
   const pills = document.getElementById('phase-pills');
@@ -2391,19 +2391,19 @@ async function handlePlanUpload(event) {
     if (status) status.textContent = '✓ ' + (json.plan?.name || 'Plan') + ' loaded — ' + json.phases.length + ' phases';
     const btn = document.getElementById('ob-plan-next');
     if (btn) btn.style.display = 'block';
-    if (state.onboarded) {
-      stripWeekOffset = 0;
-      currentPhase = 0;
-      currentSlide = 0;
-      showScreen('home');
-      document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-      document.querySelector('[data-tab="home"]')?.classList.add('active');
-      // Use setTimeout to ensure screen transition completes before re-render
-      setTimeout(() => {
-        renderHome();
-        renderSessionsScroll();
-      }, 50);
-    }
+    // Always navigate to home after plan upload, regardless of onboarded state
+    state.onboarded = true;
+    saveState();
+    stripDayOffset = 0;
+    currentPhase = 0;
+    currentSlide = 0;
+    showScreen('home');
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    document.querySelector('[data-tab="home"]')?.classList.add('active');
+    setTimeout(() => {
+      renderHome();
+      renderSessionsScroll();
+    }, 80);
   } catch(e) {
     if (status) status.textContent = '✗ ' + e.message;
   }
@@ -2492,8 +2492,8 @@ function renderWeekStrip() {
   const strip = document.getElementById('week-strip');
   if (!strip) return;
   const lblEl = document.getElementById('strip-month-label');
-  if (lblEl) lblEl.textContent = buildWeekStripLabel(stripWeekOffset);
-  strip.innerHTML = buildWeekStripHtml(stripWeekOffset);
+  if (lblEl) lblEl.textContent = buildWeekStripLabel(stripDayOffset);
+  strip.innerHTML = buildWeekStripHtml(stripDayOffset);
   requestAnimationFrame(function() {
     const cont = document.getElementById('strip-container');
     if (cont && strip.offsetHeight > 0) cont.style.height = strip.offsetHeight + 'px';
@@ -2547,10 +2547,12 @@ function renderHome(){
     const _ta2=document.getElementById('today-action'); if(_ta2) _ta2.style.display='none';
   }
   // Scrollable week strip — Mon–Sun weeks, snaps by week
+  // On first renderHome with a plan, auto-set offset to current week
+  // (handles app reload case where stripDayOffset resets to 0)
   const strip = document.getElementById('week-strip');
   const lblEl = document.getElementById('strip-month-label');
-  if (lblEl) lblEl.textContent = buildWeekStripLabel(stripWeekOffset);
-  strip.innerHTML = buildWeekStripHtml(stripWeekOffset);
+  if (lblEl) lblEl.textContent = buildWeekStripLabel(stripDayOffset);
+  strip.innerHTML = buildWeekStripHtml(stripDayOffset);
   // Sync container height to strip content after render
   requestAnimationFrame(() => {
     const cont = document.getElementById('strip-container');
@@ -2607,12 +2609,13 @@ function renderHome(){
 
 
 function getStripDays(offset) {
+  // Returns 21 days centred around today + offset days
+  // This gives enough context to scroll forward/back
   const todayDate = new Date(); todayDate.setHours(12,0,0,0);
-  // Centre today in the strip: 3 days before, today, 3 days after
   const centre = new Date(todayDate);
-  centre.setDate(todayDate.getDate() + (offset * 7));
+  centre.setDate(todayDate.getDate() + offset);
   const days = [];
-  for (let i = -3; i <= 3; i++) {
+  for (let i = -10; i <= 10; i++) {
     const d = new Date(centre);
     d.setDate(centre.getDate() + i);
     d.setHours(12,0,0,0);
@@ -2630,140 +2633,79 @@ function buildWeekStripLabel(offset) {
 }
 
 function buildWeekStripHtml(offset) {
-  const days7 = getStripDays(offset);
-  const _td = new Date();
-  const todayIso = _td.getFullYear() + '-' + String(_td.getMonth()+1).padStart(2,'0') + '-' + String(_td.getDate()).padStart(2,'0');
-  const dNames = ['S','M','T','W','T','F','S'];
-  const allPhaseSess = PLAN_PHASES.flatMap(ph => ph.weeks.flatMap(w => w.sessions || []));
-  const sessWDates = allPhaseSess.filter(s => s.id).map(s => {
-    const full = SESSIONS.find(x => x.id === s.id) || {...s, dist:(s.detail||'').split(' · ')[0]||'—', pace:(s.detail||'').split(' · ')[1]||'—', hr:'', duration:'', desc:'', week:parseInt((s.id||'w1').replace(/w(\d+).*/,'$1'))||1};
-    return {...full, date: new Date(getSessionDate(full) + 'T12:00:00')};
-  });
-  return days7.map((d) => {
+  const days = getStripDays(offset);
+  const td = new Date();
+  const todayIso = td.getFullYear() + '-' + String(td.getMonth()+1).padStart(2,'0') + '-' + String(td.getDate()).padStart(2,'0');
+  const dNames = ['Su','Mo','Tu','We','Th','Fr','Sa'];
+  const allSess = PLAN_PHASES.flatMap(ph => (ph.sessions || []));
+
+  return days.map(d => {
     const iso = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
-    const sf = sessWDates.find(s => s.date.toISOString().slice(0,10) === iso);
     const isToday = iso === todayIso;
-    let dotCls = 'dot-rest', content = '';
-    if (sf) {
-      if (state.completed[sf.id]) { dotCls = getRunType(sf.type).dot + ' dot-done'; content = '✓'; }
-      else { dotCls = getRunType(sf.type).dot; content = '●'; }
+    const dayName = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()];
+    const wkNum = getWeekNumber(iso);
+    const daySess = allSess.filter(s => s.day === dayName && s.week === wkNum);
+    const hasSess = daySess.length > 0;
+    const isCompleted = hasSess && daySess.every(s => state.completed && state.completed[s.id]);
+    const rt = hasSess ? getRunType(daySess[0].type) : null;
+    const sessColor = rt ? rt.color : 'var(--teal)';
+
+    // Today: use session colour if there's a run, else teal
+    // Shape: rounded square (12px) not oval
+    const todayBg = isToday ? (hasSess ? sessColor : 'var(--teal)') : 'transparent';
+    const fg      = isToday ? '#0d0d0d' : 'var(--text)';
+    const dimFg   = isToday ? 'rgba(0,0,0,0.55)' : 'var(--dim)';
+    const fw      = isToday ? '700' : '400';
+    const dayNumSize = '17px';
+
+    // Dot: larger and more visible
+    // Empty dot (upcoming session) = coloured outline + subtle fill
+    // Completed = solid fill
+    // No session = nothing
+    let indicator = '';
+    if (hasSess) {
+      if (isCompleted) {
+        // Solid filled dot
+        indicator = '<div style="width:7px;height:7px;border-radius:50%;background:' + sessColor + ';margin-top:1px;"></div>';
+      } else {
+        // Pill/bar indicator — more visible than a tiny dot
+        indicator = '<div style="width:20px;height:3px;border-radius:2px;background:' + sessColor + ';opacity:0.85;margin-top:2px;"></div>';
+      }
+    } else {
+      indicator = '<div style="width:20px;height:3px;margin-top:2px;"></div>';
     }
-    const sId = sf ? sf.id : null;
-    const cH = sId ? `onclick="updateTodayCard(SESSIONS.find(x=>x.id==='${sId}')||{id:'${sId}',name:'${sf?.name||''}',type:'${sf?.type||'easy'}',dist:'${sf?.dist||''}',pace:'${sf?.pace||''}',hr:'${sf?.hr||''}',week:${sf?.week||1}})"` : '';
-    const dotBorder = sf && !state.completed[sf.id] ? `border-color:${getRunType(sf.type).color}!important;` : '';
-    let todayStyle = isToday ? (sf ? `background:${getRunType(sf.type).bg};` : 'background:rgba(255,255,255,0.05);') : '';
-    return `<div class="wday" ${cH} style="${sId?'cursor:pointer;':''}${todayStyle}">
-      <div class="wday-name" style="${isToday?'font-weight:600;color:var(--text);':''}">${dNames[d.getDay()]}</div>
-      <div class="wday-dot ${dotCls}" style="${dotBorder}">${content}</div>
-      <div style="font-size:9px;font-family:var(--mono);color:${isToday?'var(--text)':'var(--dim)'};">${d.getDate()}</div>
-    </div>`;
+
+    return '<div class="cal-day-btn" data-iso="' + iso + '" style="flex-shrink:0;width:46px;height:70px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:6px 0;cursor:pointer;border-radius:12px;background:' + todayBg + ';scroll-snap-align:center;">'
+      + '<div style="font-size:9px;color:' + dimFg + ';font-weight:500;letter-spacing:0.03em;">' + dNames[d.getDay()] + '</div>'
+      + '<div style="font-size:' + dayNumSize + ';font-weight:' + fw + ';color:' + fg + ';line-height:1.2;">' + d.getDate() + '</div>'
+      + indicator
+      + '</div>';
   }).join('');
 }
 
 function shiftWeekStrip(dir) {
+  // Scroll the strip left or right by one day width
   const container = document.getElementById('strip-container');
-  const strip = document.getElementById('week-strip');
-  if (!container || !strip) { stripWeekOffset += dir; renderHome(); return; }
-
-  // Build next week HTML without re-rendering the whole page
-  const nextOffset = stripWeekOffset + dir;
-  const nextHtml = buildWeekStripHtml(nextOffset);
-  const nextLabel = buildWeekStripLabel(nextOffset);
-
-  // Create next strip div positioned beside current
-  const nextStrip = document.createElement('div');
-  nextStrip.className = 'week-strip';
-  nextStrip.style.cssText = `position:absolute;top:0;left:${dir > 0 ? '100%' : '-100%'};width:100%;`;
-  nextStrip.innerHTML = nextHtml;
-  container.style.position = 'relative';
-  container.appendChild(nextStrip);
-
-  // Slide both together — double RAF ensures initial position is painted before transition starts
-  const slideVal = dir > 0 ? '-100%' : '100%';
-  strip.style.transition = 'none';
-  strip.style.transform = 'translateX(0)';
-  nextStrip.style.transition = 'none';
-  nextStrip.style.transform = `translateX(${dir > 0 ? '100%' : '-100%'})`;
-  // First RAF: let browser apply initial transforms
-  requestAnimationFrame(() => {
-    // Second RAF: now safe to start transition
-    requestAnimationFrame(() => {
-      strip.style.transition = 'transform 0.28s cubic-bezier(0.4,0,0.2,1)';
-      nextStrip.style.transition = 'transform 0.28s cubic-bezier(0.4,0,0.2,1)';
-      strip.style.transform = `translateX(${slideVal})`;
-      nextStrip.style.transform = 'translateX(0)';
-    });
-  });
-
-  setTimeout(() => {
-    stripWeekOffset = nextOffset;
-    const lbl = document.getElementById('strip-month-label');
-    if (lbl) lbl.textContent = nextLabel;
-    // Swap: make next strip the main strip, clear positioning
-    container.innerHTML = '';
-    nextStrip.style.cssText = 'width:100%;';
-    nextStrip.style.transition = 'none';
-    nextStrip.style.transform = '';
-    nextStrip.id = 'week-strip';
-    container.appendChild(nextStrip);
-    setupStripTouch();
-  }, 290);
+  if (container) {
+    container.scrollBy({left: dir * 44, behavior: 'smooth'});
+  }
 }
 
 function setupStripTouch() {
-  const strip = document.getElementById('week-strip');
-  if (!strip) return;
-  // Remove existing listeners by cloning (ensures clean re-registration)
-  const newStrip = strip.cloneNode(true);
-  strip.parentNode.replaceChild(newStrip, strip);
-  const strip2 = document.getElementById('week-strip');
-  if (!strip2) return;
-  let startX = 0, startY = 0, dragging = false;
-  strip2.addEventListener('touchstart', e => {
-    startX = e.touches[0].clientX;
-    startY = e.touches[0].clientY;
-    dragging = false;
-    strip2.style.transition = 'none';
-  }, { passive: true });
-  strip2.addEventListener('touchmove', e => {
-    const dx = e.touches[0].clientX - startX;
-    const dy = e.touches[0].clientY - startY;
-    if (!dragging && Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 8) {
-      dragging = true;
-      // Pre-render next strip for live preview
-      const dir = dx < 0 ? 1 : -1;
-      const container = document.getElementById('strip-container');
-      if (container && !container.querySelector('.next-strip-preview')) {
-        const preview = document.createElement('div');
-        preview.className = 'week-strip next-strip-preview';
-        preview.style.cssText = `position:absolute;top:0;left:${dir > 0 ? '100%' : '-100%'};width:100%;`;
-        preview.innerHTML = buildWeekStripHtml(stripWeekOffset + dir);
-        container.appendChild(preview);
-      }
-    }
-    if (dragging) {
-      const d2 = dx * 0.92;
-      strip2.style.transform = `translateX(${d2}px)`;
-      const preview = document.querySelector('.next-strip-preview');
-      if (preview) preview.style.transform = `translateX(${d2}px)`;
-    }
-  }, { passive: true });
-  strip2.addEventListener('touchend', e => {
-    const dx = e.changedTouches[0].clientX - startX;
-    const dy = e.changedTouches[0].clientY - startY;
-    const preview = document.querySelector('.next-strip-preview');
-    if (preview) { preview.remove(); }
-    if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) && dragging) {
-      // Reset transform before shiftWeekStrip takes over the animation
-      strip2.style.transition = 'none';
-      strip2.style.transform = 'translateX(0)';
-      shiftWeekStrip(dx < 0 ? 1 : -1);
-    } else {
-      // Snap back smoothly
-      strip2.style.transition = 'transform 0.22s cubic-bezier(0.4,0,0.2,1)';
-      strip2.style.transform = 'translateX(0)';
-    }
-  }, { passive: true });
+  const container = document.getElementById('strip-container');
+  if (!container) return;
+  // Event delegation for day taps
+  container.onclick = (e) => {
+    const btn = e.target.closest('.cal-day-btn');
+    if (btn && btn.dataset.iso) calDayTap(btn.dataset.iso);
+  };
+  // Scroll today into view
+  requestAnimationFrame(() => {
+    const td = new Date();
+    const todayIso = td.getFullYear() + '-' + String(td.getMonth()+1).padStart(2,'0') + '-' + String(td.getDate()).padStart(2,'0');
+    const todayBtn = container.querySelector('[data-iso="' + todayIso + '"]');
+    if (todayBtn) todayBtn.scrollIntoView({behavior:'instant', block:'nearest', inline:'center'});
+  });
 }
 
 function getTodaySession(){
@@ -4494,7 +4436,7 @@ function obSkipPlan() {
 function finishOnboarding() {
   state.onboarded = true;
   saveState();
-  stripWeekOffset = 0;
+  stripDayOffset = 0;
   showScreen('home');
   const homeBtn = document.querySelector('[data-tab="home"]');
   if (homeBtn) {
@@ -5099,6 +5041,52 @@ function downloadLogs() {
   a.click();
   URL.revokeObjectURL(url);
   showToast('✓ Log downloaded');
+}
+
+function computeCurrentWeekOffset() {
+  // Returns the stripDayOffset (in weeks from today) needed to show the current plan week
+  // The strip centres on today + offset*7 days
+  // We want to show the week containing today, which is offset=0
+  // But if today is before plan start, show plan start week
+  if (!PLAN_START_ISO) return 0;
+  const today = new Date(); today.setHours(12,0,0,0);
+  const planStart = new Date(PLAN_START_ISO + 'T12:00:00');
+  if (today >= planStart) return 0; // today is in or past plan — show today (offset 0)
+  // Today is before plan start — scroll to plan start week
+  const diffDays = Math.round((planStart - today) / (24*60*60*1000));
+  return Math.ceil(diffDays / 7);
+}
+
+function getWeekNumber(isoDate) {
+  if (!PLAN_START_ISO) return 0;
+  const start = new Date(PLAN_START_ISO + 'T12:00:00');
+  const d     = new Date(isoDate + 'T12:00:00');
+  const diffDays = Math.round((d - start) / (24*60*60*1000));
+  return Math.max(1, Math.floor(diffDays / 7) + 1);
+}
+
+function calDayTap(iso) {
+  const allSess = PLAN_PHASES.flatMap(ph => (ph.sessions || []));
+  const d = new Date(iso + 'T12:00:00');
+  const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const weekNum  = getWeekNumber(iso);
+  const daySess  = allSess.filter(s => s.day === dayNames[d.getDay()] && s.week === weekNum);
+  if (daySess.length > 0) updateTodayCard(daySess[0]);
+
+  // Highlight selected day with session colour or teal
+  document.querySelectorAll('.cal-day-btn').forEach(el => {
+    if (el.dataset.iso === iso) {
+      const sess = allSess.find(s => {
+        const dd = new Date(iso+'T12:00:00');
+        return s.day === dayNames[dd.getDay()] && s.week === getWeekNumber(iso);
+      });
+      const rt = sess ? getRunType(sess.type) : null;
+      el.style.outline = '2px solid ' + (rt ? rt.color : 'var(--teal)');
+      el.style.outlineOffset = '2px';
+    } else {
+      el.style.outline = 'none';
+    }
+  });
 }
 </script>
 
