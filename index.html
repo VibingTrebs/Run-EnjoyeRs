@@ -2549,6 +2549,8 @@ function renderHome(){
   const todaySess=getTodaySession();
   const card=document.getElementById('today-card');
   if(!card){renderWeekStrip();return;}
+  // Always reset card style when plan is loaded (clears 'no plan' dashed border)
+  if(card) card.style.cssText = '';
   if(todaySess){
     const _rtCls = getRunType(todaySess.type).cardClass;
     const _isOptToday = todaySess.optional === true || (todaySess.name && todaySess.name.toLowerCase().includes('optional'));
@@ -2561,9 +2563,14 @@ function renderHome(){
   } else {
     card.className='today-card today-rest';
     card.onclick=null;
-    (document.getElementById('today-eyebrow')||{}).textContent='Phase 1 complete';
-    (document.getElementById('today-name')||{}).textContent='All sessions done!';
-    (document.getElementById('today-meta')||{}).textContent='Check your 4×4 benchmark vs week 1 to assess phase 2 readiness';
+    // Dynamic rest day message based on current week
+    const _todayDate = new Date(); _todayDate.setHours(12,0,0,0);
+    const _planStart = PLAN_START_ISO ? new Date(PLAN_START_ISO+'T12:00:00') : null;
+    const _curWkNum = _planStart ? Math.max(1, Math.floor(Math.round((_todayDate-_planStart)/(24*60*60*1000))/7)+1) : 1;
+    const _totalWks = PLAN_PHASES.reduce((t,ph)=>t+(ph.weeks?ph.weeks.length:0),0);
+    (document.getElementById('today-eyebrow')||{}).textContent = 'Week ' + _curWkNum + ' of ' + _totalWks;
+    (document.getElementById('today-name')||{}).textContent = 'Rest day';
+    (document.getElementById('today-meta')||{}).textContent = 'No session scheduled today — recovery is part of the plan.';
     const _ta2=document.getElementById('today-action'); if(_ta2) _ta2.style.display='none';
   }
   // Scrollable week strip — Mon–Sun weeks, snaps by week
