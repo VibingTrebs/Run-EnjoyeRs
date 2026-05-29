@@ -26,6 +26,8 @@ html,html,body{margin:0;padding:0;height:100%;height:-webkit-fill-available;}bod
 .bottom-nav{flex-shrink:0;background:var(--bg2);border-top:1px solid var(--border);display:flex;padding-bottom:env(safe-area-inset-bottom,0px);position:relative;z-index:10;}
 .nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 0 7px;cursor:pointer;border:none;background:none;color:var(--dim);transition:color 0.15s;}
 .nav-btn.active{color:var(--teal);}
+.nav-btn[data-tab="history"].active{color:#4fc3f7;}
+.nav-btn[data-tab="zones"].active{color:#ff6b6b;}
 .nav-btn svg{width:20px;height:20px;stroke:currentColor;stroke-width:1.6;fill:none;stroke-linecap:round;stroke-linejoin:round;}
 .nav-label{font-size:9px;font-weight:500;letter-spacing:0.02em;}
 .px{padding-left:18px;padding-right:18px;}
@@ -633,7 +635,7 @@ input[type=number]{-moz-appearance:textfield;}
       <div style="padding:0 18px 6px;text-align:center;">
         <span id="strip-month-label" style="font-size:11px;font-weight:500;color:var(--muted);letter-spacing:0.04em;font-family:var(--mono);"></span>
       </div>
-      <div id="strip-container" style="overflow-x:auto;overflow-y:hidden;position:relative;-webkit-overflow-scrolling:touch;scrollbar-width:none;min-height:86px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin:0 18px;">
+      <div id="strip-container" style="overflow-x:auto;overflow-y:hidden;position:relative;-webkit-overflow-scrolling:touch;scrollbar-width:none;min-height:86px;margin:8px 18px 0;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);">
         <div class="week-strip" id="week-strip" style="width:100%;"></div>
       </div>
       <div class="section-head" style="display:flex;align-items:center;justify-content:space-between;padding-right:18px;">
@@ -919,20 +921,20 @@ input[type=number]{-moz-appearance:textfield;}
         </div>
 
         <div style="display:flex;flex-direction:column;gap:12px;">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-            <div>
+          <div style="margin-bottom:10px;">
               <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">Name</div>
               <input id="prof-name" type="text" value="" placeholder="Your name" onchange="saveProfile()"
                 style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-family:var(--font);font-size:13px;color:var(--text);box-sizing:border-box;">
             </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
             <div>
               <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">Date of birth</div>
-              <input id="prof-dob" type="date" value="1994-05-28" onchange="saveProfile()"
+              <input id="prof-dob" type="date" value="" onchange="saveProfile()"
                 style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-family:var(--font);font-size:13px;color:var(--text);box-sizing:border-box;">
             </div>
             <div>
               <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">Height (cm)</div>
-              <input id="prof-height" type="number" value="177" onchange="saveProfile()"
+              <input id="prof-height" type="number" value="" onchange="saveProfile()"
                 style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-family:var(--font);font-size:13px;color:var(--text);box-sizing:border-box;">
             </div>
             <div>
@@ -1175,7 +1177,7 @@ function skipAllZipDupes() {
 function getHRMax() { return state.profile.hr_max_override || state.profile.hr_max_detected || 200; }
 function getHRRest() { return state.profile.hr_rest_override || state.profile.hr_rest_detected || 62; }
 function getWeight() { return state.profile.weight_kg || 80; }
-function getHeight() { return state.profile.height_cm || 177; }
+function getHeight() { return state.profile.height_cm || null; }
 function getAge() {
   if (!state.profile || !state.profile.dob) return 31;
   const dob = new Date(state.profile.dob);
@@ -1378,6 +1380,7 @@ function getRunType(type) { return RUN_TYPES[type] || RUN_TYPES.easy; }
 let currentPhaseView = 1;
 let currentWeekSlide = 0;
 let stripDayOffset = 0;
+let selectedDayIso = '';
 
 function renderPhasePills() {
   const pills = document.getElementById('phase-pills');
@@ -1404,6 +1407,17 @@ function switchPhase(i){ setPhaseView(i+1); }
 function setPhaseView(phase) {
   currentPhaseView = phase;
   currentWeekSlide = 0;
+  // Auto-set phase to the one containing today's week
+  if (PLAN_START_ISO && PLAN_PHASES.length > 0) {
+    const _today2 = new Date(); _today2.setHours(12,0,0,0);
+    const _start2 = new Date(PLAN_START_ISO + 'T12:00:00');
+    const _diffD = Math.round((_today2 - _start2) / (24*60*60*1000));
+    const _curWk = Math.max(1, Math.floor(_diffD / 7) + 1);
+    PLAN_PHASES.forEach((ph, i) => {
+      const wkNums = (ph.sessions || []).map(s => s.week);
+      if (wkNums.includes(_curWk)) currentPhaseView = i + 1;
+    });
+  }
   renderPhasePills();
   renderSessionsScroll();
   setupStripTouch();
@@ -1444,9 +1458,12 @@ function renderSessionsScroll() {
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:4px 16px;">${rows}</div>
     </div>`;
   }).join('');
+  // Auto-scroll to current week
+  const _curSlide = getCurrentWeekSlideIndex();
+  currentWeekSlide = _curSlide;
   if (dotsEl) {
     dotsEl.innerHTML = phase.weeks.map((_, i) =>
-      `<div class="slide-dot ${i===0?'active':''}" onclick="goToWeekSlide(${i})"></div>`
+      `<div class="slide-dot ${i===_curSlide?'active':''}" onclick="goToWeekSlide(${i})"></div>`
     ).join('');
   }
   if (!track._touchSetup) { setupSlideTouch(track); track._touchSetup = true; }
@@ -1524,7 +1541,7 @@ function updateTodayCard(sess) {
   (document.getElementById('today-eyebrow')||{}).textContent = eyebrow;
   (document.getElementById('today-name')||{}).textContent = sess.name;
   (document.getElementById('today-meta')||{}).textContent = (sess.dist||'') + (sess.pace ? ' · ' + sess.pace : '') + (sess.hr ? ' · ' + sess.hr : '');
-  document.getElementById('today-action').style.display = 'inline-flex';
+  const _taa=document.getElementById('today-action'); if(_taa) _taa.style.display='inline-flex';
 }
 
 /* ── AWARD SYSTEM ── */
@@ -2559,6 +2576,17 @@ function renderHome(){
     if (cont && strip.offsetHeight > 0) cont.style.height = strip.offsetHeight + 'px';
   });
 
+  // Auto-set phase to the one containing today's week
+  if (PLAN_START_ISO && PLAN_PHASES.length > 0) {
+    const _today2 = new Date(); _today2.setHours(12,0,0,0);
+    const _start2 = new Date(PLAN_START_ISO + 'T12:00:00');
+    const _diffD = Math.round((_today2 - _start2) / (24*60*60*1000));
+    const _curWk = Math.max(1, Math.floor(_diffD / 7) + 1);
+    PLAN_PHASES.forEach((ph, i) => {
+      const wkNums = (ph.sessions || []).map(s => s.week);
+      if (wkNums.includes(_curWk)) currentPhaseView = i + 1;
+    });
+  }
   renderPhasePills();
   renderSessionsScroll();
   setupStripTouch();
@@ -2675,7 +2703,10 @@ function buildWeekStripHtml(offset) {
       indicator = '<div style="width:20px;height:3px;margin-top:2px;"></div>';
     }
 
-    return '<div class="cal-day-btn" data-iso="' + iso + '" style="flex-shrink:0;width:46px;height:70px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:6px 0;cursor:pointer;border-radius:12px;background:' + todayBg + ';scroll-snap-align:center;">'
+    const isSelected = iso === selectedDayIso && !isToday;
+    const _outlineCol = hasSess ? sessColor : 'rgba(255,255,255,0.4)';
+    const selOutline = isSelected ? ';outline:2px solid ' + _outlineCol + ';outline-offset:2px' : '';
+    return '<div class="cal-day-btn" data-iso="' + iso + '" style="flex-shrink:0;width:46px;height:70px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:6px 0;cursor:pointer;border-radius:12px;background:' + todayBg + selOutline + ';scroll-snap-align:center;">'
       + '<div style="font-size:9px;color:' + dimFg + ';font-weight:500;letter-spacing:0.03em;">' + dNames[d.getDay()] + '</div>'
       + '<div style="font-size:' + dayNumSize + ';font-weight:' + fw + ';color:' + fg + ';line-height:1.2;">' + d.getDate() + '</div>'
       + indicator
@@ -5066,27 +5097,32 @@ function getWeekNumber(isoDate) {
 }
 
 function calDayTap(iso) {
+  selectedDayIso = iso;
   const allSess = PLAN_PHASES.flatMap(ph => (ph.sessions || []));
   const d = new Date(iso + 'T12:00:00');
   const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const weekNum  = getWeekNumber(iso);
   const daySess  = allSess.filter(s => s.day === dayNames[d.getDay()] && s.week === weekNum);
   if (daySess.length > 0) updateTodayCard(daySess[0]);
+  const strip = document.getElementById('week-strip');
+  if (strip) strip.innerHTML = buildWeekStripHtml(stripDayOffset);
+  setupStripTouch();
+}
 
-  // Highlight selected day with session colour or teal
-  document.querySelectorAll('.cal-day-btn').forEach(el => {
-    if (el.dataset.iso === iso) {
-      const sess = allSess.find(s => {
-        const dd = new Date(iso+'T12:00:00');
-        return s.day === dayNames[dd.getDay()] && s.week === getWeekNumber(iso);
-      });
-      const rt = sess ? getRunType(sess.type) : null;
-      el.style.outline = '2px solid ' + (rt ? rt.color : 'var(--teal)');
-      el.style.outlineOffset = '2px';
-    } else {
-      el.style.outline = 'none';
-    }
+function getCurrentWeekSlideIndex() {
+  // Find which slide (0-indexed) corresponds to today's week in the current phase
+  const phase = PLAN_PHASES[Math.max(0, currentPhaseView - 1)];
+  if (!phase || !PLAN_START_ISO) return 0;
+  const today = new Date(); today.setHours(12,0,0,0);
+  const start = new Date(PLAN_START_ISO + 'T12:00:00');
+  const diffDays = Math.round((today - start) / (24*60*60*1000));
+  const currentWeekNum = Math.max(1, Math.floor(diffDays / 7) + 1);
+  // Find the slide index where week.number === currentWeekNum
+  const idx = phase.weeks.findIndex(w => {
+    const sessions = w.sessions || [];
+    return sessions.length > 0 && sessions[0].week === currentWeekNum;
   });
+  return idx >= 0 ? idx : 0;
 }
 </script>
 
@@ -5117,7 +5153,7 @@ function calDayTap(iso) {
             <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px;">Date of birth</div>
               <input id="prof-dob" type="text" placeholder="28 May 1994" onchange="saveProfile()" style="width:100%;height:37px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-family:var(--font);font-size:13px;color:var(--text);box-sizing:border-box;"></div>
             <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px;">Height (cm)</div>
-              <input id="prof-height" type="number" value="177" onchange="saveProfile()" style="width:100%;height:37px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-family:var(--font);font-size:13px;color:var(--text);box-sizing:border-box;"></div>
+              <input id="prof-height" type="number" value="" onchange="saveProfile()" style="width:100%;height:37px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-family:var(--font);font-size:13px;color:var(--text);box-sizing:border-box;"></div>
             <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px;">Weight (kg)</div>
               <input id="prof-weight" type="number" placeholder="kg" onchange="saveProfile()" style="width:100%;height:37px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-family:var(--font);font-size:13px;color:var(--text);box-sizing:border-box;"></div>
           </div>
